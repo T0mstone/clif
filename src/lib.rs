@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
-use std::ops::{Add, Deref, Mul};
+use std::ops::{Add, Deref, Div, Mul, Sub};
 
 mod field;
 
@@ -137,19 +137,16 @@ impl<T> Deref for Pow2LengthVec<T> {
 /// Its dimensionality is only runtime-known
 /// (This is due to a limitation of Rust's const generics. This may be rewritten once expressions like `{1 << N}` can be used as array lengths)
 #[derive(Clone, Eq, PartialEq)]
-pub struct Multivector<T: Field>(Pow2LengthVec<T>);
+pub struct Multivector<T: Field + Clone>(Pow2LengthVec<T>);
 
-impl<T: Field> Multivector<T> {
+impl<T: Field + Clone> Multivector<T> {
     #[inline]
     fn from_data(v: Vec<T>) -> Option<Self> {
         Some(Self(Pow2LengthVec::new(v)?))
     }
 
     /// Creates an empty [`MultivectorBuilder`](#struct.MultivectorBuilder)
-    pub fn build() -> MultivectorBuilder<T>
-    where
-        T: Clone,
-    {
+    pub fn build() -> MultivectorBuilder<T> {
         MultivectorBuilder(HashMap::new())
     }
 
@@ -161,10 +158,7 @@ impl<T: Field> Multivector<T> {
 
     /// A shortcut to create a Multivector which is only a vector
     #[inline]
-    pub fn vector(v: Vec<T>) -> Self
-    where
-        T: Clone,
-    {
+    pub fn vector(v: Vec<T>) -> Self {
         let mut res = Self::build();
         for (i, t) in v.into_iter().enumerate() {
             res = res.with_component(BasisMultivector::one().switch_vector(i), t);
@@ -178,25 +172,137 @@ impl<T: Field> Multivector<T> {
     }
 
     /// The geometric product of the Multivector with itself (which always is a scalar, so only `T` is returned)
-    pub fn square(&self) -> T
-    where
-        T: Clone,
-    {
-        (self.clone() * self.clone()).0[0].clone()
+    pub fn square(&self) -> T {
+        (self.clone() * self.clone()).scalar_part()
     }
 
-    /// Extracts only the part of `self` that has the specified grade
-    pub fn grade_part(&self, grade: u32) -> Self
-    where
-        T: Clone,
-    {
+    /// The multiplicative inverse of the Multivector
+    pub fn inverse(self) -> Self {
+        let sq = self.square();
+        self / sq
+    }
+
+    fn extract_grades(&self, f: impl Fn(usize) -> bool) -> Self {
         let mut res = vec![T::zero(); self.0.len().get()];
         for (i, t) in self.0.iter().enumerate() {
-            if i.count_ones() == grade {
+            if f(i.count_ones() as usize) {
                 res[i] = t.clone();
             }
         }
         Self(Pow2LengthVec(res))
+    }
+
+    /// Extracts only the part of `self` that has the specified grade
+    pub fn grade_part(&self, grade: isize) -> Self {
+        if grade < 0 {
+            return Self::zero();
+        }
+        let grade = grade as usize;
+
+        self.extract_grades(|g| g == grade)
+    }
+
+    /// Extracts only the scalar (grade 0) part of `self`
+    #[inline]
+    pub fn scalar_part(&self) -> T {
+        self.grade_part(0).0[0].clone()
+    }
+
+    /// Extracts only the part of `self` that has an even grade
+    #[inline]
+    pub fn even_grade_part(&self) -> Self {
+        self.extract_grades(|g| g % 2 == 0)
+    }
+
+    /// Extracts only the part of `self` that has an odd grade
+    #[inline]
+    pub fn odd_grade_part(&self) -> Self {
+        self.extract_grades(|g| g % 2 == 1)
+    }
+
+    fn product_helper(self, rhs: Self, f: impl Fn(usize, usize) -> isize) -> Self {
+        let mut res = Self::zero();
+
+        for r in 0..self.dim() {
+            let s_r = self.grade_part(r as _);
+            if s_r.is_zero() {
+                continue;
+            }
+            for s in 0..rhs.dim() {
+                let r_s = rhs.grade_part(s as _);
+                if r_s.is_zero() {
+                    continue;
+                }
+                let delta = (s_r.clone() * r_s).grade_part(f(r, s));
+                res = res + delta;
+            }
+        }
+
+        res
+    }
+
+    /// The left inner product, defined as A.left_inner_prod(B) =
+    /// sum over r,s with 0 <= r < A.dim() and 0 <= s < B.dim() of (A.grade(r) * B.grade(s)).grade(s - r)
+    #[inline]
+    pub fn left_inner_prod(self, rhs: Self) -> Self {
+        self.product_helper(rhs, |r, s| s as isize - r as isize)
+    }
+
+    /// The right inner product, defined as A.left_inner_prod(B) =
+    /// sum over r,s with 0 <= r < A.dim() and 0 <= s < B.dim() of (A.grade(r) * B.grade(s)).grade(r - s)
+    #[inline]
+    pub fn right_inner_prod(self, rhs: Self) -> Self {
+        self.product_helper(rhs, |r, s| r as isize - s as isize)
+    }
+
+    /// The right inner product, defined as A.left_inner_prod(B) =
+    /// sum over r,s with 0 <= r < A.dim() and 0 <= s < B.dim() of (A.grade(r) * B.grade(s)).grade(r + s)
+    #[inline]
+    pub fn outer_prod(self, rhs: Self) -> Self {
+        self.product_helper(rhs, |r, s| r as isize + s as isize)
+    }
+
+    /// The grade involution of the Multivector
+    #[inline]
+    pub fn grade_involution(self) -> Self {
+        self.even_grade_part() - self.odd_grade_part()
+    }
+
+    /// The reversion of the Multivector
+    pub fn reversion(mut self) -> Self {
+        for (i, t) in (self.0).0.iter_mut().enumerate() {
+            let r = i.count_ones();
+            let x = r * (r - 1) / 2;
+            if x % 2 == 1 {
+                unsafe { std::ptr::write(t, std::ptr::read(t) * T::minus_one()) }
+            }
+        }
+
+        self
+    }
+
+    /// The Clifford conjugation of the Multivector
+    #[inline]
+    pub fn clifford_conjugation(self) -> Self {
+        self.grade_involution().reversion()
+    }
+
+    /// The scalar product of two Multivectors.
+    #[inline]
+    pub fn scalar_product(self, rhs: Self) -> T {
+        (self.reversion() * rhs).scalar_part()
+    }
+
+    /// The squared magnitude of a Multivector
+    #[inline]
+    pub fn magsqr(&self) -> T {
+        self.clone().scalar_product(self.clone())
+    }
+
+    /// The commutator operation on two Multivectors
+    #[inline]
+    pub fn commutator(self, rhs: Self) -> Self {
+        (self.clone() * rhs.clone() - rhs * self) / T::two()
     }
 
     fn into_iter(self) -> std::vec::IntoIter<T> {
@@ -205,7 +311,7 @@ impl<T: Field> Multivector<T> {
     }
 }
 
-impl<T: Field + fmt::Debug> fmt::Debug for Multivector<T> {
+impl<T: Field + Clone + fmt::Debug> fmt::Debug for Multivector<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let d = self.dim();
 
@@ -248,7 +354,7 @@ impl<T: Field + fmt::Debug> fmt::Debug for Multivector<T> {
     }
 }
 
-impl<T: Field> Zero for Multivector<T> {
+impl<T: Field + Clone> Zero for Multivector<T> {
     fn zero() -> Self {
         Self(Pow2LengthVec(vec![T::zero()]))
     }
@@ -298,7 +404,16 @@ impl<T: Field + Clone> Mul<T> for Multivector<T> {
     }
 }
 
-impl<T: Field> Add for Multivector<T> {
+impl<T: Field + Clone> Div<T> for Multivector<T> {
+    type Output = Self;
+
+    fn div(self, rhs: T) -> Self::Output {
+        let res = self.into_iter().map(|t| rhs.clone() / t).collect();
+        Self(Pow2LengthVec(res))
+    }
+}
+
+impl<T: Field + Clone> Add for Multivector<T> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
@@ -308,6 +423,15 @@ impl<T: Field> Add for Multivector<T> {
             .map(|(a, b)| a + b)
             .collect();
         Self(Pow2LengthVec(res))
+    }
+}
+
+impl<T: Field + Clone> Sub for Multivector<T> {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, rhs: Self) -> Self {
+        self + rhs * T::minus_one()
     }
 }
 
