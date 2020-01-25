@@ -104,10 +104,12 @@ mod repr {
     }
 }
 
+/// A `Vec` whose length is a power of two (this also implies it to not be 0)
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct Pow2LengthList<T>(Vec<T>);
+pub struct Pow2LengthVec<T>(Vec<T>);
 
-impl<T> Pow2LengthList<T> {
+impl<T> Pow2LengthVec<T> {
+    /// Create a new `Pow2LengthVec` from a regular `Vec`. Returns `None` iff the `Vec`'s length is not a power of 2.
     pub fn new(v: Vec<T>) -> Option<Self> {
         if v.len().is_power_of_two() {
             Some(Self(v))
@@ -116,12 +118,13 @@ impl<T> Pow2LengthList<T> {
         }
     }
 
+    /// The length of the `Pow2LengthVec`
     pub fn len(&self) -> NonZeroUsize {
         unsafe { NonZeroUsize::new_unchecked(self.0.len()) }
     }
 }
 
-impl<T> Deref for Pow2LengthList<T> {
+impl<T> Deref for Pow2LengthVec<T> {
     type Target = Vec<T>;
 
     fn deref(&self) -> &Vec<T> {
@@ -129,8 +132,56 @@ impl<T> Deref for Pow2LengthList<T> {
     }
 }
 
+/// A Multivector.
+///
+/// Its dimensionality is only runtime-known
+/// (This is due to a limitation of Rust's const generics. This may be rewritten once expressions like `{1 << N}` can be used as array lengths)
 #[derive(Clone, Eq, PartialEq)]
-pub struct Multivector<T: Field>(Pow2LengthList<T>);
+pub struct Multivector<T: Field>(Pow2LengthVec<T>);
+
+impl<T: Field> Multivector<T> {
+    #[inline]
+    fn from_data(v: Vec<T>) -> Option<Self> {
+        Some(Self(Pow2LengthVec::new(v)?))
+    }
+
+    /// Creates an empty [`MultivectorBuilder`](#struct.MultivectorBuilder)
+    pub fn build() -> MultivectorBuilder<T>
+    where
+        T: Clone,
+    {
+        MultivectorBuilder(HashMap::new())
+    }
+
+    /// A shortcut to create a Multivector which is only a scalar
+    #[inline]
+    pub fn scalar(t: T) -> Self {
+        Self::from_data(vec![t]).unwrap()
+    }
+
+    /// A shortcut to create a Multivector which is only a vector
+    #[inline]
+    pub fn vector(v: Vec<T>) -> Self
+    where
+        T: Clone,
+    {
+        let mut res = Self::build();
+        for (i, t) in v.into_iter().enumerate() {
+            res = res.with_component(BasisMultivector::one().switch_vector(i), t);
+        }
+        res.finish()
+    }
+
+    /// The dimensionality of the Multivector
+    pub fn dim(&self) -> usize {
+        lowest_bit_pos(self.0.len())
+    }
+
+    fn into_iter(self) -> std::vec::IntoIter<T> {
+        let Self(Pow2LengthVec(v)) = self;
+        v.into_iter()
+    }
+}
 
 impl<T: Field + fmt::Debug> fmt::Debug for Multivector<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -175,53 +226,9 @@ impl<T: Field + fmt::Debug> fmt::Debug for Multivector<T> {
     }
 }
 
-impl<T: Field> Multivector<T> {
-    #[inline]
-    pub fn from_data(v: Vec<T>) -> Option<Self> {
-        Some(Self(Pow2LengthList::new(v)?))
-    }
-
-    pub fn build() -> MultivectorBuilder<T>
-    where
-        T: Clone,
-    {
-        MultivectorBuilder(HashMap::new())
-    }
-
-    #[inline]
-    pub fn scalar(t: T) -> Self {
-        Self::from_data(vec![t]).unwrap()
-    }
-
-    #[inline]
-    pub fn vector(v: Vec<T>) -> Self
-    where
-        T: Clone,
-    {
-        let mut res = Self::build();
-        for (i, t) in v.into_iter().enumerate() {
-            res = res.with_component(BasisMultivector::one().switch_vector(i), t);
-        }
-        res.finish()
-    }
-
-    pub fn data(&self) -> &[T] {
-        &self.0[..]
-    }
-
-    pub fn dim(&self) -> usize {
-        lowest_bit_pos(self.0.len())
-    }
-
-    fn into_iter(self) -> std::vec::IntoIter<T> {
-        let Self(Pow2LengthList(v)) = self;
-        v.into_iter()
-    }
-}
-
 impl<T: Field> Zero for Multivector<T> {
     fn zero() -> Self {
-        Self(Pow2LengthList(vec![T::zero()]))
+        Self(Pow2LengthVec(vec![T::zero()]))
     }
 
     fn is_zero(&self) -> bool {
@@ -256,7 +263,7 @@ impl<T: Field + Clone> Mul for Multivector<T> {
         }
 
         // ok since `dim` is definetely a power of 2
-        Self(Pow2LengthList(res))
+        Self(Pow2LengthVec(res))
     }
 }
 
@@ -265,7 +272,7 @@ impl<T: Field + Clone> Mul<T> for Multivector<T> {
 
     fn mul(self, rhs: T) -> Self::Output {
         let res = self.into_iter().map(|t| rhs.clone() * t).collect();
-        Self(Pow2LengthList(res))
+        Self(Pow2LengthVec(res))
     }
 }
 
@@ -278,19 +285,25 @@ impl<T: Field> Add for Multivector<T> {
             .zip(rhs.into_iter())
             .map(|(a, b)| a + b)
             .collect();
-        Self(Pow2LengthList(res))
+        Self(Pow2LengthVec(res))
     }
 }
 
+/// A Basis Multivector, which is the geometric/outer product of some number of basis vectors
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct BasisMultivector(pub HashSet<usize>);
+pub struct BasisMultivector(HashSet<usize>);
 
 impl BasisMultivector {
+    /// The Basis Multivector for Scalars
     #[inline]
     pub fn one() -> Self {
         Self(HashSet::new())
     }
 
+    /// Takes a list of basis vectors and returns their geometric/outer product
+    ///
+    /// # Caution
+    /// The index for the basis vectors is zero-based, so e1 would be represented as `0`, e2 as `1` and so on
     #[inline]
     pub fn from_vec(basis_vectors: Vec<usize>) -> Self {
         basis_vectors
@@ -298,6 +311,10 @@ impl BasisMultivector {
             .fold(Self::one(), |s, i| s.switch_vector(i))
     }
 
+    /// Switches if a basis vector should be included in the final product
+    ///
+    /// # Caution
+    /// The index for the basis vector is zero-based, so e1 would be represented as `0`, e2 as `1` and so on
     pub fn switch_vector(mut self, i: usize) -> Self {
         if self.0.contains(&i) {
             self.0.remove(&i);
@@ -305,11 +322,6 @@ impl BasisMultivector {
             self.0.insert(i);
         }
         self
-    }
-
-    #[inline]
-    pub fn grade(&self) -> usize {
-        self.0.len()
     }
 
     fn data_index(&self) -> usize {
@@ -334,14 +346,17 @@ impl Hash for BasisMultivector {
     }
 }
 
+/// A Struct to build a Multivector
 pub struct MultivectorBuilder<T: Field + Clone>(HashMap<BasisMultivector, T>);
 
 impl<T: Field + Clone> MultivectorBuilder<T> {
+    /// Sets the component of the Multivector which corresponds to `basis`` to the specified value
     pub fn with_component(mut self, basis: BasisMultivector, value: T) -> Self {
         self.0.insert(basis, value);
         self
     }
 
+    /// Extracts the contained Multivector
     pub fn finish(self) -> Multivector<T> {
         if self.0.is_empty() {
             return Multivector::zero();
@@ -354,10 +369,19 @@ impl<T: Field + Clone> MultivectorBuilder<T> {
             res[b.data_index()] = t;
         }
 
-        Multivector(Pow2LengthList(res))
+        Multivector(Pow2LengthVec(res))
     }
 }
 
+/// A macro to simplify creating a Multivector.
+///
+/// Syntax:
+/// ```no_run
+/// multivector!([] => t); // creates a scalar with value t
+/// multivector!([1] => t); // creates a vector with its e1 component being t
+/// multivector!([1] => t, [2] => u); // creates a vector with its e1 component being t and its e2 component being u
+/// multivector!([1 2] => t, [2] => u); // creates a vector with its e1e2 component being t and its e2 component being u
+/// ```
 #[macro_export]
 macro_rules! multivector {
     (@inner {$($res:tt)*}) => {

@@ -5,6 +5,7 @@ mod field_seal {
     pub trait FieldSeal {}
 }
 
+/// A trait that combines other traits for types that work (not exactly but close enough) like a mathematical Field.
 pub trait Field:
     Sized
     + Add<Output = Self>
