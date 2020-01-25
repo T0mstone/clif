@@ -6,6 +6,8 @@ use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::ops::{Add, Deref, Div, Mul, Sub};
 
+// TODO: add support for non-orthonormal bases?
+
 mod field;
 
 pub use self::field::Field;
