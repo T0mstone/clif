@@ -160,7 +160,12 @@ impl<T: Field + fmt::Debug> fmt::Debug for Multivector<T> {
             if not_first {
                 f.pad(" + ")?;
             }
-            f.pad(&format!("{:?}{}", v, repr::make_basis_str(i)))?;
+            let basis_str = repr::make_basis_str(i);
+            if basis_str.is_empty() {
+                f.pad(&format!("{:?}", v))?;
+            } else {
+                f.pad(&format!("{:?}*{}", v, basis_str))?;
+            }
         }
 
         f.pad(")")

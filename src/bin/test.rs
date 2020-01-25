@@ -1,6 +1,7 @@
 use clif::{multivector, BasisMultivector, Multivector};
 
-fn main() {
+#[allow(unused)]
+fn creation_methods() {
     let mv = Multivector::from_data(vec![1, 2, 3, 4, 5, 0, 0, 0]).unwrap();
 
     println!("(1) mv is {:?} ({:?})", mv, mv.data());
@@ -18,4 +19,16 @@ fn main() {
     let mv = multivector![[] => 1, [1] => 2, [2] => 3, [3] => 4, [1 2] => 5];
 
     println!("(3) mv is {:?} ({:?})", mv, mv.data());
+}
+
+#[allow(unused)]
+fn geometric_product() {
+    let a = multivector!([1] => 1);
+    let b = multivector!([2] => -1);
+    println!("{:?}", a * b);
+}
+
+fn main() {
+    creation_methods();
+    geometric_product();
 }
