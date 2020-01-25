@@ -168,6 +168,7 @@ impl<T: Field + fmt::Debug> fmt::Debug for Multivector<T> {
 }
 
 impl<T: Field> Multivector<T> {
+    #[inline]
     pub fn from_data(v: Vec<T>) -> Option<Self> {
         Some(Self(Pow2LengthList::new(v)?))
     }
@@ -177,6 +178,23 @@ impl<T: Field> Multivector<T> {
         T: Clone,
     {
         MultivectorBuilder(HashMap::new())
+    }
+
+    #[inline]
+    pub fn scalar(t: T) -> Self {
+        Self::from_data(vec![t]).unwrap()
+    }
+
+    #[inline]
+    pub fn vector(v: Vec<T>) -> Self
+    where
+        T: Clone,
+    {
+        let mut res = Self::build();
+        for (i, t) in v.into_iter().enumerate() {
+            res = res.with_component(BasisMultivector::one().switch_vector(i), t);
+        }
+        res.finish()
     }
 
     pub fn data(&self) -> &[T] {
