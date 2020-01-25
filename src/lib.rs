@@ -10,15 +10,6 @@ mod field;
 
 pub use self::field::Field;
 
-/*
-Encoding for N Dimensions
-1   =^= 0
-e_n =^= 1 << n
-a = product_i e_i; b = product_j e_j; a * b =^= a xor b // ascending order is implied; factors of (-1) computed separately
-
-KEEP IN MIND: basis vectors are numbered from 0
-*/
-
 fn lowest_bit_pos(i: NonZeroUsize) -> usize {
     let mut r = 0;
     let mut i = i.get();
@@ -33,6 +24,14 @@ fn lowest_bit_pos(i: NonZeroUsize) -> usize {
     }
 }
 
+/*
+Encoding for N Dimensional Basis Multivectors (Products of Basis Vectors in ascending Order; The Vector Basis is assumed to be Orthonormal)
+1   =^= 0
+e_n =^= 1 << n
+a = product_i e_i; b = product_j e_j; a * b =^= a xor b // ascending order is implied; factors of (-1) computed separately
+
+KEEP IN MIND: basis vectors are numbered from 0
+*/
 mod repr {
     use super::lowest_bit_pos;
     use once_cell::sync::Lazy;
