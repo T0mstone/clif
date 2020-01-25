@@ -63,16 +63,20 @@ mod repr {
 
     #[inline]
     fn fac_neg1(e_x: usize, e_y: usize) -> bool {
+        if e_x == 0 || e_y == 0 {
+            return false;
+        }
+        let b = lowest_bit_pos(unsafe { NonZeroUsize::new_unchecked(e_y) }); // get the `n` from `e_n` (0-based)
         match grade(e_y) {
-            0 => false,
+            0 => unreachable!(),
             // now e_y is guaranteed > 0
             1 => {
-                let b = lowest_bit_pos(unsafe { NonZeroUsize::new_unchecked(e_y) }); // get the `n` from `e_n`
-                let num_swaps = e_x & !(((1 << b) - 1) + (1 << b)); // an ugly version of `e_x & !(1 << (b + 1) - 1)` to avoid overflows
+                // an ugly version of `e_x & !(1 << (b + 1) - 1)` to avoid overflows
+                // it extracts all bits higher than the `b`th of e_x
+                let num_swaps = (e_x & !(((1 << b) - 1) + (1 << b))).count_ones();
                 num_swaps % 2 != 0
             }
             _ => {
-                let b = lowest_bit_pos(unsafe { NonZeroUsize::new_unchecked(e_y) });
                 let e_z = 1 << b;
                 fac_neg1(e_x, e_z) ^ fac_neg1(e_x, e_y ^ e_z)
             }
@@ -234,7 +238,13 @@ impl<T: Field + Clone> Mul for Multivector<T> {
         let mut res = vec![T::zero(); len];
 
         for (i, a) in self.into_iter().enumerate() {
+            if a.is_zero() {
+                continue;
+            }
             for (j, b) in rhs.clone().into_iter().enumerate() {
+                if b.is_zero() {
+                    continue;
+                }
                 let fac_n1 = self::repr::get_fac_neg_1(i, j);
                 let c = a.clone() * b;
                 let idx = i ^ j;

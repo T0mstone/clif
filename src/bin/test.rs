@@ -23,7 +23,7 @@ fn creation_methods() {
 
 #[allow(unused)]
 fn geometric_product() {
-    let a = multivector!([1] => 1);
+    let a = multivector!([1] => 2);
     let b = multivector!([2] => -1);
     println!("{:?}", a * b);
 }
