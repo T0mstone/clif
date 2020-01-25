@@ -7,6 +7,7 @@ use std::num::NonZeroUsize;
 use std::ops::{Add, Deref, Div, Mul, Sub};
 
 // TODO: add support for non-orthonormal bases?
+// TODO: better error handling
 
 mod field;
 
@@ -194,6 +195,21 @@ impl<T: Field + Clone> Multivector<T> {
         Self(Pow2LengthVec(res))
     }
 
+    /// Get all the grades of which `self` is made up
+    pub fn grades(&self) -> HashSet<usize> {
+        let mut res: HashSet<usize> = self
+            .0
+            .iter()
+            .enumerate()
+            .filter_map(|(i, t)| if t.is_zero() { None } else { Some((i, t)) })
+            .map(|(i, _)| i.count_ones() as usize)
+            .collect();
+        if res.is_empty() {
+            res.insert(0);
+        }
+        res
+    }
+
     /// Extracts only the part of `self` that has the specified grade
     pub fn grade_part(&self, grade: isize) -> Self {
         if grade < 0 {
@@ -225,18 +241,25 @@ impl<T: Field + Clone> Multivector<T> {
     fn product_helper(self, rhs: Self, f: impl Fn(usize, usize) -> isize) -> Self {
         let mut res = Self::zero();
 
-        for r in 0..self.dim() {
+        //        eprintln!("g {:?}", res.grades());
+
+        for r in 0..=self.dim() {
             let s_r = self.grade_part(r as _);
             if s_r.is_zero() {
+                //                eprintln!("r={}: cont: s_r is 0", r);
                 continue;
             }
-            for s in 0..rhs.dim() {
+            for s in 0..=rhs.dim() {
                 let r_s = rhs.grade_part(s as _);
                 if r_s.is_zero() {
+                    //                    eprintln!("r={}, s={}: cont: r_s is 0", r, s);
                     continue;
                 }
                 let delta = (s_r.clone() * r_s).grade_part(f(r, s));
+                //                eprintln!("g {:?}", res.grades());
+                //                eprintln!("dg {:?}", delta.grades());
                 res = res + delta;
+                //                eprintln!("=> g {:?}", res.grades());
             }
         }
 
@@ -244,21 +267,21 @@ impl<T: Field + Clone> Multivector<T> {
     }
 
     /// The left inner product, defined as A.left_inner_prod(B) =
-    /// sum over r,s with 0 <= r < A.dim() and 0 <= s < B.dim() of (A.grade(r) * B.grade(s)).grade(s - r)
+    /// sum over r,s with 0 <= r <= A.dim() and 0 <= s <= B.dim() of (A.grade(r) * B.grade(s)).grade(s - r)
     #[inline]
     pub fn left_inner_prod(self, rhs: Self) -> Self {
         self.product_helper(rhs, |r, s| s as isize - r as isize)
     }
 
     /// The right inner product, defined as A.left_inner_prod(B) =
-    /// sum over r,s with 0 <= r < A.dim() and 0 <= s < B.dim() of (A.grade(r) * B.grade(s)).grade(r - s)
+    /// sum over r,s with 0 <= r <= A.dim() and 0 <= s <= B.dim() of (A.grade(r) * B.grade(s)).grade(r - s)
     #[inline]
     pub fn right_inner_prod(self, rhs: Self) -> Self {
         self.product_helper(rhs, |r, s| r as isize - s as isize)
     }
 
     /// The right inner product, defined as A.left_inner_prod(B) =
-    /// sum over r,s with 0 <= r < A.dim() and 0 <= s < B.dim() of (A.grade(r) * B.grade(s)).grade(r + s)
+    /// sum over r,s with 0 <= r <= A.dim() and 0 <= s <= B.dim() of (A.grade(r) * B.grade(s)).grade(r + s)
     #[inline]
     pub fn outer_prod(self, rhs: Self) -> Self {
         self.product_helper(rhs, |r, s| r as isize + s as isize)
@@ -305,6 +328,37 @@ impl<T: Field + Clone> Multivector<T> {
     #[inline]
     pub fn commut(self, rhs: Self) -> Self {
         (self.clone() * rhs.clone() - rhs * self) / T::two()
+    }
+
+    /// Projects `self` onto the subspace defined by `rhs`.
+    ///
+    /// # Caution
+    /// `rhs` should be an invertible blade! If it is not, who-knows-what could happen.
+    pub fn project(self, rhs: Self) -> Self {
+        self.left_inner_prod(rhs.clone()) * rhs.inverse()
+    }
+
+    /// Calculates the rejection of `self` from the subspace defined by `rhs`.
+    ///
+    /// # Caution
+    /// `rhs` should be an invertible blade! If it is not, who-knows-what could happen.
+    pub fn reject(self, rhs: Self) -> Self {
+        self.outer_prod(rhs.clone()) * rhs.inverse()
+    }
+
+    /// Calculates the Reflection of `self` in the subspace defined by `rhs`
+    ///
+    /// # Caution
+    /// `rhs` should be an invertible blade! If it is not, who-knows-what could happen.
+    pub fn reflect(self, rhs: Self) -> Self {
+        let g = rhs.grades();
+        let r = g.iter().next().expect("Tried to reflect along 0");
+
+        if r % 2 == 0 {
+            rhs.clone() * self * rhs.inverse()
+        } else {
+            rhs.clone() * self.invol() * rhs.inverse()
+        }
     }
 
     fn into_iter(self) -> std::vec::IntoIter<T> {
@@ -410,7 +464,7 @@ impl<T: Field + Clone> Div<T> for Multivector<T> {
     type Output = Self;
 
     fn div(self, rhs: T) -> Self::Output {
-        let res = self.into_iter().map(|t| rhs.clone() / t).collect();
+        let res = self.into_iter().map(|t| t / rhs.clone()).collect();
         Self(Pow2LengthVec(res))
     }
 }
@@ -419,10 +473,12 @@ impl<T: Field + Clone> Add for Multivector<T> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
-        let res = self
-            .into_iter()
-            .zip(rhs.into_iter())
-            .map(|(a, b)| a + b)
+        let range = 0..self.0.len().max(rhs.0.len()).get();
+        let res = range
+            .map(|i| {
+                self.0.get(i).cloned().unwrap_or_else(T::zero)
+                    + rhs.0.get(i).cloned().unwrap_or_else(T::zero)
+            })
             .collect();
         Self(Pow2LengthVec(res))
     }
@@ -529,6 +585,7 @@ impl<T: Field + Clone> MultivectorBuilder<T> {
 /// multivector!([1] => t); // creates a vector with its e1 component being t
 /// multivector!([1] => t, [2] => u); // creates a vector with its e1 component being t and its e2 component being u
 /// multivector!([1 2] => t, [2] => u); // creates a vector with its e1e2 component being t and its e2 component being u
+/// multivector!([2 1] => t, [2] => u); // creates a vector with its e1e2 component being t and its e2 component being u
 /// ```
 #[macro_export]
 macro_rules! multivector {
