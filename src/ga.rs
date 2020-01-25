@@ -90,12 +90,13 @@ mod repr {
 }
 
 use crate::Field;
+use num_traits::Zero;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
-use std::ops::{Deref, Mul};
+use std::ops::{Add, Deref, Mul};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Pow2LengthList<T>(Vec<T>);
@@ -168,10 +169,6 @@ impl<T: Field> Multivector<T> {
         Some(Self(Pow2LengthList::new(v)?))
     }
 
-    pub fn zero() -> Self {
-        Self(Pow2LengthList(vec![T::zero()]))
-    }
-
     pub fn build() -> MultivectorBuilder<T>
     where
         T: Clone,
@@ -190,6 +187,16 @@ impl<T: Field> Multivector<T> {
     fn into_iter(self) -> std::vec::IntoIter<T> {
         let Self(Pow2LengthList(v)) = self;
         v.into_iter()
+    }
+}
+
+impl<T: Field> Zero for Multivector<T> {
+    fn zero() -> Self {
+        Self(Pow2LengthList(vec![T::zero()]))
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.iter().all(Zero::is_zero)
     }
 }
 
@@ -214,6 +221,28 @@ impl<T: Field + Clone> Mul for Multivector<T> {
         }
 
         // ok since `dim` is definetely a power of 2
+        Self(Pow2LengthList(res))
+    }
+}
+
+impl<T: Field + Clone> Mul<T> for Multivector<T> {
+    type Output = Self;
+
+    fn mul(self, rhs: T) -> Self::Output {
+        let res = self.into_iter().map(|t| rhs.clone() * t).collect();
+        Self(Pow2LengthList(res))
+    }
+}
+
+impl<T: Field> Add for Multivector<T> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        let res = self
+            .into_iter()
+            .zip(rhs.into_iter())
+            .map(|(a, b)| a + b)
+            .collect();
         Self(Pow2LengthList(res))
     }
 }
@@ -278,7 +307,7 @@ impl<T: Field + Clone> MultivectorBuilder<T> {
         self
     }
 
-    pub fn build(self) -> Multivector<T> {
+    pub fn finish(self) -> Multivector<T> {
         if self.0.is_empty() {
             return Multivector::zero();
         }
@@ -292,4 +321,22 @@ impl<T: Field + Clone> MultivectorBuilder<T> {
 
         Multivector(Pow2LengthList(res))
     }
+}
+
+#[macro_export]
+macro_rules! multivector {
+    (@inner {$($res:tt)*}) => {
+        $crate::Multivector::build()
+        $($res)*
+        .finish()
+    };
+    (@inner {$($res:tt)*} [] $x:expr $(, [$($l:literal)*] $e:expr)*) => {
+        multivector!(@inner {$($res)* .with_component($crate::BasisMultivector::one(), $x)} $([$($l)*] $e),*);
+    };
+    (@inner {$($res:tt)*} [$($li:literal)*] $x:expr $(, [$($l:literal)*] $e:expr)*) => {
+        multivector!(@inner {$($res)* .with_component($crate::BasisMultivector::from_vec(vec![$($li - 1),*]), $x)} $([$($l)*] $e),*);
+    };
+    ($([$($l:literal)*] => $e:expr),+) => {
+        multivector!(@inner {} $([$($l)*] $e),+);
+    };
 }
