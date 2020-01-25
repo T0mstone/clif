@@ -19,6 +19,10 @@ pub trait Field:
     fn minus_one() -> Self {
         Self::zero() - Self::one()
     }
+
+    fn two() -> Self {
+        Self::one() + Self::one()
+    }
 }
 
 impl<

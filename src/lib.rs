@@ -177,6 +177,28 @@ impl<T: Field> Multivector<T> {
         lowest_bit_pos(self.0.len())
     }
 
+    /// The geometric product of the Multivector with itself (which always is a scalar, so only `T` is returned)
+    pub fn square(&self) -> T
+    where
+        T: Clone,
+    {
+        (self.clone() * self.clone()).0[0].clone()
+    }
+
+    /// Extracts only the part of `self` that has the specified grade
+    pub fn grade_part(&self, grade: u32) -> Self
+    where
+        T: Clone,
+    {
+        let mut res = vec![T::zero(); self.0.len().get()];
+        for (i, t) in self.0.iter().enumerate() {
+            if i.count_ones() == grade {
+                res[i] = t.clone();
+            }
+        }
+        Self(Pow2LengthVec(res))
+    }
+
     fn into_iter(self) -> std::vec::IntoIter<T> {
         let Self(Pow2LengthVec(v)) = self;
         v.into_iter()
