@@ -264,12 +264,12 @@ impl<T: Field + Clone> Multivector<T> {
 
     /// The grade involution of the Multivector
     #[inline]
-    pub fn grade_involution(self) -> Self {
+    pub fn invol(self) -> Self {
         self.even_grade_part() - self.odd_grade_part()
     }
 
     /// The reversion of the Multivector
-    pub fn reversion(mut self) -> Self {
+    pub fn rev(mut self) -> Self {
         for (i, t) in (self.0).0.iter_mut().enumerate() {
             let r = i.count_ones();
             let x = r * (r - 1) / 2;
@@ -283,25 +283,25 @@ impl<T: Field + Clone> Multivector<T> {
 
     /// The Clifford conjugation of the Multivector
     #[inline]
-    pub fn clifford_conjugation(self) -> Self {
-        self.grade_involution().reversion()
+    pub fn conjug(self) -> Self {
+        self.invol().rev()
     }
 
     /// The scalar product of two Multivectors.
     #[inline]
-    pub fn scalar_product(self, rhs: Self) -> T {
-        (self.reversion() * rhs).scalar_part()
+    pub fn scalar_prod(self, rhs: Self) -> T {
+        (self.rev() * rhs).scalar_part()
     }
 
     /// The squared magnitude of a Multivector
     #[inline]
     pub fn magsqr(&self) -> T {
-        self.clone().scalar_product(self.clone())
+        self.clone().scalar_prod(self.clone())
     }
 
     /// The commutator operation on two Multivectors
     #[inline]
-    pub fn commutator(self, rhs: Self) -> Self {
+    pub fn commut(self, rhs: Self) -> Self {
         (self.clone() * rhs.clone() - rhs * self) / T::two()
     }
 
