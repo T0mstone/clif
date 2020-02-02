@@ -304,6 +304,16 @@ fn vec_name(dim: usize, k: NonZeroUsize) -> String {
     }
 }
 
+/// The macro for creating Multivector types.
+///
+/// Syntax: `register_multivector!($(pub)? $n $(; $($(pub)? $k),+)?);`
+///
+/// - `$n` generates the Multivector struct (with n dimensions), It is absolutely crucial and if you omit it, just don't use this crate
+/// - `$k` generate several k-vector structs
+/// - the `pub` markers mark if the corresponding struct will be `pub`
+///
+/// # Conditions
+/// Make sure, `clif::{Field, Trig, Zero}` are present in the scope this macro is called in, otherwise it won't work
 #[proc_macro]
 pub fn register_multivector(input: TokenStream) -> TokenStream {
     let conf = Config::new(input).unwrap_or_else(|e| panic!("Macro Error: {}", e));

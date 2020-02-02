@@ -1,3 +1,4 @@
+use clif::{Field, Trig, Zero};
 use clif_proc_macro::register_multivector;
 
 register_multivector!(pub 3; pub 1, pub 2, pub 3);

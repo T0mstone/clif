@@ -3,7 +3,7 @@
 //insert mod _def_multivector_Zdz {
 //rm_nextline
 pub mod _def_multivector_Zdz {
-    use clif::{Field, Trig, Zero};
+    use super::{Field, Trig, Zero};
     use core::cmp::{Eq, PartialEq};
     #[allow(unused)]
     use core::convert::TryFrom;
@@ -518,7 +518,7 @@ pub mod _def_multivector_Zdz {
         }
     }
 
-    /// A macro to simplify creating a Multivector in Zdz dimensionZs(d)z.
+    /// A macro for easy creation of a Multivector in Zdz dimensionZs(d)z.
     ///
     /// Syntax:
     /// ```no_run

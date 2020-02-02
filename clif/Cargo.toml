@@ -8,3 +8,9 @@ edition = "2018"
 
 [dependencies]
 num-traits = "0.2.11"
+clif_proc_macro = { path = "../clif_proc_macro" }
+
+[features]
+default = ["2d", "3d"]
+2d = []
+3d = []
