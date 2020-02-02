@@ -1,5 +1,5 @@
-use num_traits::{One, Zero};
-use std::ops::{Add, Div, Mul, Sub};
+use crate::{One, Zero};
+use core::ops::{Add, Div, Mul, Sub};
 
 mod field_seal {
     pub trait FieldSeal {}
